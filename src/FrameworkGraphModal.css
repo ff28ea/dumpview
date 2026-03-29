@@ -1,0 +1,257 @@
+.framework-overlay {
+  position: fixed;
+  inset: 40px 0 0;
+  z-index: 111;
+  display: grid;
+  place-items: start center;
+  padding: 10px 12px 12px;
+  background: rgba(5, 10, 18, 0.62);
+  backdrop-filter: blur(10px);
+}
+
+.framework-popover {
+  width: min(1700px, calc(100vw - 24px));
+  height: calc(100svh - 52px);
+  max-height: calc(100svh - 52px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(244, 170, 59, 0.12), transparent 26%),
+    rgba(9, 16, 28, 0.97);
+  box-shadow:
+    0 26px 80px rgba(0, 0, 0, 0.46),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.framework-popover-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(9, 16, 28, 0.94);
+  backdrop-filter: blur(16px);
+}
+
+.framework-popover-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.framework-popover-title strong,
+.framework-popover-title span {
+  overflow-wrap: anywhere;
+}
+
+.framework-popover-title span {
+  color: var(--text-muted);
+}
+
+.framework-popover-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px 18px 18px;
+}
+
+.framework-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.framework-error-banner {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 112, 112, 0.22);
+  border-radius: 14px;
+  background: rgba(116, 29, 29, 0.5);
+  color: #ffd7d7;
+}
+
+.framework-flow-shell {
+  height: 100%;
+  min-height: 700px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02)),
+    rgba(6, 11, 20, 0.88);
+}
+
+.framework-flow-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+}
+
+.framework-flow-canvas {
+  background:
+    radial-gradient(circle at top left, rgba(91, 166, 255, 0.06), transparent 28%),
+    rgba(6, 11, 20, 0.88);
+}
+
+.framework-flow-node {
+  min-width: 272px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(12, 18, 30, 0.94);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.framework-flow-node.core {
+  border-color: rgba(244, 170, 59, 0.3);
+  background:
+    radial-gradient(circle at top left, rgba(244, 170, 59, 0.13), transparent 44%),
+    rgba(12, 18, 30, 0.96);
+}
+
+.framework-flow-node.derived {
+  border-color: rgba(91, 166, 255, 0.24);
+}
+
+.framework-flow-node.missing {
+  opacity: 0.68;
+  border-style: dashed;
+}
+
+.framework-flow-node-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.framework-flow-node-badge,
+.framework-flow-node-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font: 600 11px/1 var(--sans);
+}
+
+.framework-flow-node-badge {
+  background: rgba(244, 170, 59, 0.14);
+  color: #ffd29a;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.framework-flow-node-kind {
+  background: rgba(91, 166, 255, 0.12);
+  color: #b8d8ff;
+}
+
+.framework-flow-node strong {
+  color: var(--text-strong);
+  font: 700 16px/1.2 var(--heading);
+}
+
+.framework-flow-node p,
+.framework-flow-node-meta {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.framework-flow-node-meta {
+  font-size: 12px;
+}
+
+.framework-flow-handle {
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.framework-flow-edge .react-flow__edge-path {
+  stroke-width: 2.2;
+}
+
+.framework-flow-edge.core-edge .react-flow__edge-path {
+  stroke: rgba(244, 170, 59, 0.72);
+}
+
+.framework-flow-edge.inherit-edge .react-flow__edge-path {
+  stroke: rgba(91, 166, 255, 0.58);
+}
+
+.framework-flow-canvas .react-flow__edge-textbg {
+  fill: rgba(9, 16, 28, 0.92);
+}
+
+.framework-flow-canvas .react-flow__edge-text {
+  fill: rgba(242, 246, 251, 0.68);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.framework-flow-minimap {
+  background: rgba(10, 16, 27, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.framework-flow-controls {
+  box-shadow: none;
+}
+
+.framework-flow-controls button {
+  background: rgba(12, 18, 30, 0.94);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-strong);
+}
+
+@media (max-width: 920px) {
+  .framework-overlay {
+    padding: 12px 10px;
+  }
+
+  .framework-popover {
+    width: calc(100vw - 20px);
+    height: calc(100svh - 56px);
+    max-height: calc(100svh - 56px);
+  }
+
+  .framework-popover-header,
+  .framework-popover-body {
+    padding: 16px;
+  }
+
+  .framework-flow-shell {
+    min-height: 520px;
+  }
+}
+
+@media (max-width: 640px) {
+  .framework-popover-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .framework-meta-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .framework-flow-shell {
+    min-height: 440px;
+  }
+}
