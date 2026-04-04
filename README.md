@@ -79,13 +79,13 @@ npm install
 ### Run the Desktop App
 
 ```powershell
-npm.cmd run tauri -- dev
+npm run dev
 ```
 
-If your shell allows plain `npm`, this also works:
+If you only want the frontend dev server without the desktop shell, run:
 
 ```powershell
-npm run tauri -- dev
+npm run frontend:dev
 ```
 
 The repository already includes the local Tauri CLI through npm, so a global `cargo-tauri` installation is not required.

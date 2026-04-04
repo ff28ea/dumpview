@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -150,10 +151,6 @@ function relationLabel(relation: string) {
   return relationLabels[relation] ?? relation
 }
 
-function formatBytes(value: number | null) {
-  return value == null ? 'n/a' : `${value} B`
-}
-
 function formatHex(value: number | null) {
   return value == null ? 'n/a' : `0x${value.toString(16).toUpperCase()}`
 }
@@ -166,6 +163,82 @@ function formatMethodParameter(parameter: ParameterInfo) {
   return parameter.name
     ? `${parameter.typeDisplay} ${parameter.name}`
     : parameter.typeDisplay
+}
+
+function collectUniqueSymbolLinks(links: SymbolLink[]) {
+  return [...new Map(links.map((link) => [`${link.kind}:${link.name}`, link])).values()]
+}
+
+function isTypeLinkBoundary(character: string | undefined) {
+  return character == null || !/[A-Za-z0-9_]/.test(character)
+}
+
+function buildInlineTypeDisplay(
+  typeDisplay: string,
+  links: SymbolLink[],
+  onSelectSymbol: (name: string) => void,
+) {
+  if (links.length === 0) {
+    return {
+      content: typeDisplay as ReactNode,
+      unmatchedLinks: [] as SymbolLink[],
+    }
+  }
+
+  const uniqueLinks = collectUniqueSymbolLinks(links).sort(
+    (left, right) => right.name.length - left.name.length,
+  )
+  const matchedKeys = new Set<string>()
+  const nodes: ReactNode[] = []
+  let cursor = 0
+  let plainStart = 0
+  let partIndex = 0
+
+  while (cursor < typeDisplay.length) {
+    const matchedLink = uniqueLinks.find((link) => {
+      if (!typeDisplay.startsWith(link.name, cursor)) {
+        return false
+      }
+
+      const previousCharacter = cursor > 0 ? typeDisplay[cursor - 1] : undefined
+      const nextCharacter = typeDisplay[cursor + link.name.length]
+
+      return isTypeLinkBoundary(previousCharacter) && isTypeLinkBoundary(nextCharacter)
+    })
+
+    if (!matchedLink) {
+      cursor += 1
+      continue
+    }
+
+    if (plainStart < cursor) {
+      nodes.push(typeDisplay.slice(plainStart, cursor))
+    }
+
+    matchedKeys.add(`${matchedLink.kind}:${matchedLink.name}`)
+    nodes.push(
+      <button
+        key={`${matchedLink.kind}-${matchedLink.name}-${partIndex}`}
+        type="button"
+        className="inline-type-link"
+        onClick={() => onSelectSymbol(matchedLink.name)}
+      >
+        {matchedLink.name}
+      </button>,
+    )
+    partIndex += 1
+    cursor += matchedLink.name.length
+    plainStart = cursor
+  }
+
+  if (plainStart < typeDisplay.length) {
+    nodes.push(typeDisplay.slice(plainStart))
+  }
+
+  return {
+    content: nodes,
+    unmatchedLinks: uniqueLinks.filter((link) => !matchedKeys.has(`${link.kind}:${link.name}`)),
+  }
 }
 
 function shouldWrapMethodSignature(method: MethodInfo) {
@@ -185,20 +258,213 @@ function shouldWrapMethodSignature(method: MethodInfo) {
   )
 }
 
-function collectMethodLinks(method: MethodInfo) {
-  const uniqueLinks = new Map<string, SymbolLink>()
+function buildTypeReferenceDisplay(
+  typeDisplay: string,
+  links: SymbolLink[],
+  onSelectSymbol: (name: string) => void,
+  onLoadLinkedDetails: (names: string[]) => void,
+  linkedDetailCache: Record<string, SymbolDetail | null>,
+) {
+  const inlineTypeDisplay = buildInlineTypeDisplay(typeDisplay, links, onSelectSymbol)
+  const linkedSymbols = collectUniqueSymbolLinks(links)
+  const linkedDetails = linkedSymbols
+    .map((link) => linkedDetailCache[link.name])
+    .filter((detail): detail is SymbolDetail => detail != null)
+  const previewableLinkedDetails = linkedDetails.filter(
+    (detail) => detail.kind === 'enum' || detail.fields.length > 0,
+  )
+  const loadingLinkedDetails =
+    linkedSymbols.length > 0 && linkedSymbols.some((link) => !(link.name in linkedDetailCache))
 
-  for (const link of method.returnLinks) {
-    uniqueLinks.set(`${link.kind}:${link.name}`, link)
-  }
-
-  for (const parameter of method.parameters) {
-    for (const link of parameter.links) {
-      uniqueLinks.set(`${link.kind}:${link.name}`, link)
+  if (linkedSymbols.length === 0) {
+    return {
+      content: <span className="field-type">{inlineTypeDisplay.content}</span>,
+      unmatchedLinks: inlineTypeDisplay.unmatchedLinks,
     }
   }
 
-  return [...uniqueLinks.values()]
+  return {
+    content: (
+      <span
+        className="field-type-shell"
+        onMouseEnter={() => onLoadLinkedDetails(linkedSymbols.map((link) => link.name))}
+        onFocus={() => onLoadLinkedDetails(linkedSymbols.map((link) => link.name))}
+      >
+        <span className="field-type">
+          {inlineTypeDisplay.content}
+        </span>
+        <span className="field-hover-card" role="tooltip" aria-hidden="true">
+          {previewableLinkedDetails.length > 0 ? (
+            <div className="field-hover-sections">
+              {previewableLinkedDetails.map((detail) => {
+                if (detail.kind === 'enum') {
+                  const previewValues = detail.enumValues.slice(0, 10)
+                  const remainingCount = detail.enumValues.length - previewValues.length
+
+                  return (
+                    <div key={detail.name} className="field-hover-section">
+                      <div className="field-hover-section-head">
+                        <strong>{detail.name}</strong>
+                      </div>
+                      <div className="field-hover-code">
+                        <div className="field-hover-code-line">
+                          <span className="field-hover-code-keyword">enum</span>{' '}
+                          <span className="field-hover-code-type-name">{detail.name}</span>
+                          {detail.underlyingType ? (
+                            <>
+                              {' '}
+                              <span className="field-hover-code-punctuation">:</span>{' '}
+                              <span className="field-hover-enum-underlying">
+                                {detail.underlyingType}
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                        <div className="field-hover-code-line">
+                          <span className="field-hover-code-punctuation">{'{'}</span>
+                        </div>
+                        {previewValues.map((value, index) => (
+                          <div
+                            key={`${detail.name}-${value.name}`}
+                            className="field-hover-code-line field-hover-code-line-field"
+                          >
+                            <span className="field-hover-code-indent" aria-hidden="true">
+                              {'  '}
+                            </span>
+                            <span className="field-hover-enum-value-name">{value.name}</span>
+                            {value.value !== '' ? (
+                              <>
+                                {' '}
+                                <span className="field-hover-code-punctuation">=</span>{' '}
+                                <span className="field-hover-enum-value">{value.value}</span>
+                              </>
+                            ) : null}
+                            {index < previewValues.length - 1 || remainingCount > 0 ? (
+                              <span className="field-hover-code-punctuation">,</span>
+                            ) : null}
+                          </div>
+                        ))}
+                        <div className="field-hover-code-line">
+                          <span className="field-hover-code-punctuation">{'};'}</span>
+                        </div>
+                        {remainingCount > 0 ? (
+                          <span className="field-hover-muted">{`+${remainingCount} more values`}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                }
+
+                const previewFields = detail.fields.slice(0, 8)
+                const remainingCount = detail.fields.length - previewFields.length
+
+                return (
+                  <div key={detail.name} className="field-hover-section">
+                    <div className="field-hover-section-head">
+                      <strong>{detail.name}</strong>
+                      <span>{`size ${formatHex(detail.size)}`}</span>
+                    </div>
+                    <div className="field-hover-code">
+                      <div className="field-hover-code-line">
+                        <span className="field-hover-code-keyword">struct</span>{' '}
+                        <span className="field-hover-code-type-name">{detail.name}</span>{' '}
+                        <span className="field-hover-code-comment">{`// size ${formatHex(detail.size)}`}</span>
+                      </div>
+                      <div className="field-hover-code-line">
+                        <span className="field-hover-code-punctuation">{'{'}</span>
+                      </div>
+                      {previewFields.map((previewField) => (
+                        <div
+                          key={`${detail.name}-${previewField.name}`}
+                          className="field-hover-code-line field-hover-code-line-field"
+                        >
+                          <span className="field-hover-code-indent" aria-hidden="true">
+                            {'  '}
+                          </span>
+                          <span className="field-hover-field-type">
+                            {previewField.typeDisplay}
+                          </span>{' '}
+                          <span className="field-hover-field-name">
+                            {previewField.name}
+                            {shouldShowArrayDim(previewField.arrayDim)
+                              ? `[${previewField.arrayDim}]`
+                              : ''}
+                            ;
+                          </span>{' '}
+                          <span className="field-hover-code-comment">
+                            {`// ${formatHex(previewField.offset)}`}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="field-hover-code-line">
+                        <span className="field-hover-code-punctuation">{'};'}</span>
+                      </div>
+                      {remainingCount > 0 ? (
+                        <span className="field-hover-muted">{`+${remainingCount} more fields`}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : loadingLinkedDetails ? (
+            <span className="field-hover-muted">Loading type fields...</span>
+          ) : linkedSymbols.length > 0 ? (
+            <span className="field-hover-muted">No referenced type preview.</span>
+          ) : null}
+        </span>
+      </span>
+    ),
+    unmatchedLinks: inlineTypeDisplay.unmatchedLinks,
+  }
+}
+
+function buildFieldTypeDisplay(
+  field: FieldInfo,
+  onSelectSymbol: (name: string) => void,
+  onLoadLinkedDetails: (names: string[]) => void,
+  linkedDetailCache: Record<string, SymbolDetail | null>,
+) {
+  return buildTypeReferenceDisplay(
+    field.typeDisplay,
+    field.links,
+    onSelectSymbol,
+    onLoadLinkedDetails,
+    linkedDetailCache,
+  )
+}
+
+function buildMethodTypeDisplays(
+  method: MethodInfo,
+  onSelectSymbol: (name: string) => void,
+  onLoadLinkedDetails: (names: string[]) => void,
+  linkedDetailCache: Record<string, SymbolDetail | null>,
+) {
+  const returnTypeDisplay = buildTypeReferenceDisplay(
+    method.returnType,
+    method.returnLinks,
+    onSelectSymbol,
+    onLoadLinkedDetails,
+    linkedDetailCache,
+  )
+  const parameterTypeDisplays = method.parameters.map((parameter) =>
+    buildTypeReferenceDisplay(
+      parameter.typeDisplay,
+      parameter.links,
+      onSelectSymbol,
+      onLoadLinkedDetails,
+      linkedDetailCache,
+    ),
+  )
+
+  return {
+    returnTypeDisplay,
+    parameterTypeDisplays,
+    unmatchedLinks: collectUniqueSymbolLinks([
+      ...returnTypeDisplay.unmatchedLinks,
+      ...parameterTypeDisplays.flatMap((parameterDisplay) => parameterDisplay.unmatchedLinks),
+    ]),
+  }
 }
 
 function buildEnumCpp(detail: SymbolDetail) {
@@ -374,6 +640,12 @@ function App() {
   const [frameworkGraphOpen, setFrameworkGraphOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [copyLabel, setCopyLabel] = useState('Copy C++')
+  const [copiedOffsetValue, setCopiedOffsetValue] = useState<string | null>(null)
+  const [linkedTypeDetailCache, setLinkedTypeDetailCache] = useState<
+    Record<string, SymbolDetail | null>
+  >({})
+  const linkedTypeDetailCacheRef = useRef<Record<string, SymbolDetail | null>>({})
+  const pendingLinkedTypeDetailsRef = useRef(new Set<string>())
   const deferredQuery = useDeferredValue(query)
   const searchHistoryStorageKey = summary ? buildSearchHistoryStorageKey(summary) : null
 
@@ -524,6 +796,16 @@ function App() {
     setCopyLabel('Copy C++')
     setRelationViewOpen(false)
   }, [selectedName])
+
+  useEffect(() => {
+    linkedTypeDetailCacheRef.current = linkedTypeDetailCache
+  }, [linkedTypeDetailCache])
+
+  useEffect(() => {
+    linkedTypeDetailCacheRef.current = {}
+    pendingLinkedTypeDetailsRef.current.clear()
+    setLinkedTypeDetailCache({})
+  }, [summary?.sourceLabel])
 
   useEffect(() => {
     if (
@@ -747,6 +1029,80 @@ function App() {
     jumpToSymbol(name)
   }
 
+  async function copyTextToClipboard(value: string) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+      return
+    }
+
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.setAttribute('readonly', 'true')
+    textarea.style.position = 'absolute'
+    textarea.style.left = '-9999px'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+
+  async function copyOffsetValue(offset: number | null) {
+    if (offset == null) {
+      return
+    }
+
+    const formattedOffset = formatHex(offset)
+    await copyTextToClipboard(formattedOffset)
+    setCopiedOffsetValue(formattedOffset)
+    window.setTimeout(() => {
+      setCopiedOffsetValue((current) => (current === formattedOffset ? null : current))
+    }, 1500)
+  }
+
+  async function ensureLinkedTypeDetails(names: string[]) {
+    if (!runningInTauri || !summary) {
+      return
+    }
+
+    const nextNames = [...new Set(names.filter(Boolean))].filter((name) => {
+      return (
+        !(name in linkedTypeDetailCacheRef.current) &&
+        !pendingLinkedTypeDetailsRef.current.has(name)
+      )
+    })
+
+    if (nextNames.length === 0) {
+      return
+    }
+
+    nextNames.forEach((name) => {
+      pendingLinkedTypeDetailsRef.current.add(name)
+    })
+
+    const resolvedEntries = await Promise.all(
+      nextNames.map(async (name) => {
+        try {
+          const nextDetail = await invoke<SymbolDetail>('get_symbol_detail', { name })
+          return [name, nextDetail] as const
+        } catch {
+          return [name, null] as const
+        } finally {
+          pendingLinkedTypeDetailsRef.current.delete(name)
+        }
+      }),
+    )
+
+    const nextEntries = Object.fromEntries(resolvedEntries)
+    linkedTypeDetailCacheRef.current = {
+      ...linkedTypeDetailCacheRef.current,
+      ...nextEntries,
+    }
+    setLinkedTypeDetailCache((current) => ({
+      ...current,
+      ...nextEntries,
+    }))
+  }
+
   async function startWindowDrag(event: ReactMouseEvent<HTMLDivElement>) {
     if (!runningInTauri || event.button !== 0) {
       return
@@ -809,17 +1165,9 @@ function App() {
     const code = buildEnumCpp(detail)
 
     try {
-      await navigator.clipboard.writeText(code)
+      await copyTextToClipboard(code)
     } catch {
-      const textarea = document.createElement('textarea')
-      textarea.value = code
-      textarea.setAttribute('readonly', 'true')
-      textarea.style.position = 'absolute'
-      textarea.style.left = '-9999px'
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textarea)
+      return
     }
 
     setCopyLabel('Copied')
@@ -1247,24 +1595,6 @@ function App() {
                     </button>
                   </div>
                   <h3>{detail.name}</h3>
-                  <div className="metric-grid">
-                    <div>
-                      <span>Size</span>
-                      <strong>{formatBytes(detail.size)}</strong>
-                    </div>
-                    <div>
-                      <span>Fields</span>
-                      <strong>{detail.fieldCount}</strong>
-                    </div>
-                    <div>
-                      <span>Methods</span>
-                      <strong>{detail.methodCount}</strong>
-                    </div>
-                    <div>
-                      <span>Children</span>
-                      <strong>{detail.childCount}</strong>
-                    </div>
-                  </div>
                 </section>
 
                 <section className="detail-section">
@@ -1296,86 +1626,128 @@ function App() {
                       <span>{detail.fields.length} items</span>
                     </div>
                     <div className="field-list">
-                      {fieldRows.map((row) =>
-                        row.kind === 'single' ? (
-                          <div key={row.key} className="table-block">
-                            <div className="table-row">
-                              <div className="table-main">
-                                <div className="field-declaration">
-                                  <span className="field-type">{row.field.typeDisplay}</span>
-                                  <span className="field-name">{row.field.name}</span>
-                                </div>
-                                {row.field.links.length > 0 ? (
-                                  <div className="chip-row">
-                                    {row.field.links.map((link) => (
-                                      <button
-                                        key={`${row.field.name}-${link.name}`}
-                                        className="link-chip subtle"
-                                        onClick={() => jumpToSymbol(link.name)}
-                                      >
-                                        {link.name}
-                                      </button>
-                                    ))}
+                      {fieldRows.map((row) => {
+                        if (row.kind === 'single') {
+                          const fieldTypeDisplay = buildFieldTypeDisplay(
+                            row.field,
+                            jumpToSymbol,
+                            (names) => {
+                              void ensureLinkedTypeDetails(names)
+                            },
+                            linkedTypeDetailCache,
+                          )
+
+                          return (
+                            <div key={row.key} className="table-block">
+                              <div className="table-row">
+                                <div className="table-main">
+                                  <div className="field-declaration">
+                                    {fieldTypeDisplay.content}
+                                    <span className="field-name">{row.field.name}</span>
                                   </div>
-                                ) : null}
-                              </div>
-                              <div className="table-meta">
-                                <span>offset {row.field.offset ?? 'n/a'}</span>
-                                <span>size {row.field.size ?? 'n/a'}</span>
-                                {shouldShowArrayDim(row.field.arrayDim) ? (
-                                  <span>dim {row.field.arrayDim}</span>
-                                ) : null}
+                                  {fieldTypeDisplay.unmatchedLinks.length > 0 ? (
+                                    <div className="chip-row">
+                                      {fieldTypeDisplay.unmatchedLinks.map((link) => (
+                                        <button
+                                          key={`${row.field.name}-${link.name}`}
+                                          className="link-chip subtle"
+                                          onClick={() => jumpToSymbol(link.name)}
+                                        >
+                                          {link.name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <div className="table-meta">
+                                  {row.field.offset != null ? (
+                                    <button
+                                      type="button"
+                                      className="offset-button"
+                                      onClick={() => void copyOffsetValue(row.field.offset)}
+                                    >
+                                      {copiedOffsetValue === formatHex(row.field.offset)
+                                        ? `Copied ${formatHex(row.field.offset)}`
+                                        : `offset ${formatHex(row.field.offset)}`}
+                                    </button>
+                                  ) : (
+                                    <span>offset n/a</span>
+                                  )}
+                                  {shouldShowArrayDim(row.field.arrayDim) ? (
+                                    <span>dim {row.field.arrayDim}</span>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ) : (
+                          )
+                        }
+
+                        return (
                           <article key={row.key} className="field-group">
                             <div className="field-group-head">
                               <div className="field-group-copy">
-                                <strong>Shared Offset {row.offset}</strong>
+                                <strong>{`Shared Offset ${formatHex(row.offset)}`}</strong>
                                 <p className="field-group-hint">{row.hint}</p>
                               </div>
                               <div className="field-group-meta">
-                                <span>offset {row.offset}</span>
+                                <button
+                                  type="button"
+                                  className="offset-button"
+                                  onClick={() => void copyOffsetValue(row.offset)}
+                                >
+                                  {copiedOffsetValue === formatHex(row.offset)
+                                    ? `Copied ${formatHex(row.offset)}`
+                                    : `offset ${formatHex(row.offset)}`}
+                                </button>
                                 <span>slot size {row.slotSize ?? 'mixed'}</span>
                                 <span>fields {row.fields.length}</span>
                               </div>
                             </div>
 
                             <div className="field-group-list">
-                              {row.fields.map((field) => (
-                                <div key={field.name} className="field-group-item">
-                                  <div className="table-main">
-                                    <div className="field-declaration">
-                                      <span className="field-type">{field.typeDisplay}</span>
-                                      <span className="field-name">{field.name}</span>
-                                    </div>
-                                    {field.links.length > 0 ? (
-                                      <div className="chip-row">
-                                        {field.links.map((link) => (
-                                          <button
-                                            key={`${field.name}-${link.name}`}
-                                            className="link-chip subtle"
-                                            onClick={() => jumpToSymbol(link.name)}
-                                          >
-                                            {link.name}
-                                          </button>
-                                        ))}
+                              {row.fields.map((field) => {
+                                const fieldTypeDisplay = buildFieldTypeDisplay(
+                                  field,
+                                  jumpToSymbol,
+                                  (names) => {
+                                    void ensureLinkedTypeDetails(names)
+                                  },
+                                  linkedTypeDetailCache,
+                                )
+
+                                return (
+                                  <div key={field.name} className="field-group-item">
+                                    <div className="table-main">
+                                      <div className="field-declaration">
+                                        {fieldTypeDisplay.content}
+                                        <span className="field-name">{field.name}</span>
                                       </div>
-                                    ) : null}
+                                      {fieldTypeDisplay.unmatchedLinks.length > 0 ? (
+                                        <div className="chip-row">
+                                          {fieldTypeDisplay.unmatchedLinks.map((link) => (
+                                            <button
+                                              key={`${field.name}-${link.name}`}
+                                              className="link-chip subtle"
+                                              onClick={() => jumpToSymbol(link.name)}
+                                            >
+                                              {link.name}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <div className="table-meta">
+                                      {shouldShowArrayDim(field.arrayDim) ? (
+                                        <span>dim {field.arrayDim}</span>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                  <div className="table-meta">
-                                    <span>size {field.size ?? 'n/a'}</span>
-                                    {shouldShowArrayDim(field.arrayDim) ? (
-                                      <span>dim {field.arrayDim}</span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           </article>
-                        ),
-                      )}
+                        )
+                      })}
                       {detail.fields.length === 0 ? (
                         <p className="empty-state">No field entries available.</p>
                       ) : null}
@@ -1390,7 +1762,14 @@ function App() {
                     <div className="method-list">
                       {detail.methods.map((method) => {
                         const wrapSignature = shouldWrapMethodSignature(method)
-                        const methodLinks = collectMethodLinks(method)
+                        const methodTypeDisplays = buildMethodTypeDisplays(
+                          method,
+                          jumpToSymbol,
+                          (names) => {
+                            void ensureLinkedTypeDetails(names)
+                          },
+                          linkedTypeDetailCache,
+                        )
 
                         return (
                           <article key={method.name} className="method-card">
@@ -1402,7 +1781,7 @@ function App() {
                               {wrapSignature ? (
                                 <>
                                   <div className="method-signature-line">
-                                    <span className="field-type">{method.returnType}</span>
+                                    {methodTypeDisplays.returnTypeDisplay.content}
                                     <span className="method-call-token">
                                       <span className="field-name method-call-name">
                                         {method.name}
@@ -1418,7 +1797,7 @@ function App() {
                                           key={`${method.name}-${parameter.name || index}`}
                                           className="method-parameter-line"
                                         >
-                                          <span className="field-type">{parameter.typeDisplay}</span>
+                                          {methodTypeDisplays.parameterTypeDisplays[index].content}
                                           <span className="method-parameter-token">
                                             {parameter.name ? (
                                               <span className="field-name method-parameter-name">
@@ -1439,28 +1818,28 @@ function App() {
                                   </div>
                                 </>
                               ) : (
-                                <div className="method-signature-line">
-                                  <span className="field-type">{method.returnType}</span>
-                                  <span className="method-call-token">
-                                    <span className="field-name method-call-name">{method.name}</span>
-                                    <span className="method-punctuation">(</span>
-                                  </span>
+                                <div className="method-signature-line single-line">
+                                  {methodTypeDisplays.returnTypeDisplay.content}
+                                  {' '}
+                                  <span className="field-name method-call-name">{method.name}</span>
+                                  <span className="method-punctuation">(</span>
                                   {method.parameters.map((parameter, index) => (
                                     <span
                                       key={`${method.name}-${parameter.name || index}`}
-                                      className="method-inline-parameter"
+                                      className="method-inline-parameter compact"
                                     >
-                                      <span className="field-type">{parameter.typeDisplay}</span>
-                                      <span className="method-parameter-token">
-                                        {parameter.name ? (
+                                      {index > 0 ? (
+                                        <span className="method-punctuation">, </span>
+                                      ) : null}
+                                      {methodTypeDisplays.parameterTypeDisplays[index].content}
+                                      {parameter.name ? (
+                                        <>
+                                          {' '}
                                           <span className="field-name method-parameter-name">
                                             {parameter.name}
                                           </span>
-                                        ) : null}
-                                        {index < method.parameters.length - 1 ? (
-                                          <span className="method-punctuation">,</span>
-                                        ) : null}
-                                      </span>
+                                        </>
+                                      ) : null}
                                     </span>
                                   ))}
                                   <span className="method-punctuation">)</span>
@@ -1475,9 +1854,9 @@ function App() {
                               ) : null}
                             </div>
 
-                            {methodLinks.length > 0 ? (
+                            {methodTypeDisplays.unmatchedLinks.length > 0 ? (
                               <div className="chip-row">
-                                {methodLinks.map((link) => (
+                                {methodTypeDisplays.unmatchedLinks.map((link) => (
                                   <button
                                     key={`${method.name}-${link.kind}-${link.name}`}
                                     className="link-chip subtle"
