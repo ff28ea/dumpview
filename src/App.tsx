@@ -275,6 +275,7 @@ function buildTypeReferenceDisplay(
   )
   const loadingLinkedDetails =
     linkedSymbols.length > 0 && linkedSymbols.some((link) => !(link.name in linkedDetailCache))
+  const shouldShowHoverCard = previewableLinkedDetails.length > 0 || loadingLinkedDetails
 
   if (linkedSymbols.length === 0) {
     return {
@@ -293,126 +294,126 @@ function buildTypeReferenceDisplay(
         <span className="field-type">
           {inlineTypeDisplay.content}
         </span>
-        <span className="field-hover-card" role="tooltip" aria-hidden="true">
-          {previewableLinkedDetails.length > 0 ? (
-            <div className="field-hover-sections">
-              {previewableLinkedDetails.map((detail) => {
-                if (detail.kind === 'enum') {
-                  const previewValues = detail.enumValues.slice(0, 10)
-                  const remainingCount = detail.enumValues.length - previewValues.length
+        {shouldShowHoverCard ? (
+          <span className="field-hover-card" role="tooltip" aria-hidden="true">
+            {previewableLinkedDetails.length > 0 ? (
+              <div className="field-hover-sections">
+                {previewableLinkedDetails.map((detail) => {
+                  if (detail.kind === 'enum') {
+                    const previewValues = detail.enumValues.slice(0, 10)
+                    const remainingCount = detail.enumValues.length - previewValues.length
+
+                    return (
+                      <div key={detail.name} className="field-hover-section">
+                        <div className="field-hover-section-head">
+                          <strong>{detail.name}</strong>
+                        </div>
+                        <div className="field-hover-code">
+                          <div className="field-hover-code-line">
+                            <span className="field-hover-code-keyword">enum</span>{' '}
+                            <span className="field-hover-code-type-name">{detail.name}</span>
+                            {detail.underlyingType ? (
+                              <>
+                                {' '}
+                                <span className="field-hover-code-punctuation">:</span>{' '}
+                                <span className="field-hover-enum-underlying">
+                                  {detail.underlyingType}
+                                </span>
+                              </>
+                            ) : null}
+                          </div>
+                          <div className="field-hover-code-line">
+                            <span className="field-hover-code-punctuation">{'{'}</span>
+                          </div>
+                          {previewValues.map((value, index) => (
+                            <div
+                              key={`${detail.name}-${value.name}`}
+                              className="field-hover-code-line field-hover-code-line-field"
+                            >
+                              <span className="field-hover-code-indent" aria-hidden="true">
+                                {'  '}
+                              </span>
+                              <span className="field-hover-enum-value-name">{value.name}</span>
+                              {value.value !== '' ? (
+                                <>
+                                  {' '}
+                                  <span className="field-hover-code-punctuation">=</span>{' '}
+                                  <span className="field-hover-enum-value">{value.value}</span>
+                                </>
+                              ) : null}
+                              {index < previewValues.length - 1 || remainingCount > 0 ? (
+                                <span className="field-hover-code-punctuation">,</span>
+                              ) : null}
+                            </div>
+                          ))}
+                          <div className="field-hover-code-line">
+                            <span className="field-hover-code-punctuation">{'};'}</span>
+                          </div>
+                          {remainingCount > 0 ? (
+                            <span className="field-hover-muted">{`+${remainingCount} more values`}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  const previewFields = detail.fields.slice(0, 8)
+                  const remainingCount = detail.fields.length - previewFields.length
 
                   return (
                     <div key={detail.name} className="field-hover-section">
                       <div className="field-hover-section-head">
                         <strong>{detail.name}</strong>
+                        <span>{`size ${formatHex(detail.size)}`}</span>
                       </div>
                       <div className="field-hover-code">
                         <div className="field-hover-code-line">
-                          <span className="field-hover-code-keyword">enum</span>{' '}
-                          <span className="field-hover-code-type-name">{detail.name}</span>
-                          {detail.underlyingType ? (
-                            <>
-                              {' '}
-                              <span className="field-hover-code-punctuation">:</span>{' '}
-                              <span className="field-hover-enum-underlying">
-                                {detail.underlyingType}
-                              </span>
-                            </>
-                          ) : null}
+                          <span className="field-hover-code-keyword">struct</span>{' '}
+                          <span className="field-hover-code-type-name">{detail.name}</span>{' '}
+                          <span className="field-hover-code-comment">{`// size ${formatHex(detail.size)}`}</span>
                         </div>
                         <div className="field-hover-code-line">
                           <span className="field-hover-code-punctuation">{'{'}</span>
                         </div>
-                        {previewValues.map((value, index) => (
+                        {previewFields.map((previewField) => (
                           <div
-                            key={`${detail.name}-${value.name}`}
+                            key={`${detail.name}-${previewField.name}`}
                             className="field-hover-code-line field-hover-code-line-field"
                           >
                             <span className="field-hover-code-indent" aria-hidden="true">
                               {'  '}
                             </span>
-                            <span className="field-hover-enum-value-name">{value.name}</span>
-                            {value.value !== '' ? (
-                              <>
-                                {' '}
-                                <span className="field-hover-code-punctuation">=</span>{' '}
-                                <span className="field-hover-enum-value">{value.value}</span>
-                              </>
-                            ) : null}
-                            {index < previewValues.length - 1 || remainingCount > 0 ? (
-                              <span className="field-hover-code-punctuation">,</span>
-                            ) : null}
+                            <span className="field-hover-field-type">
+                              {previewField.typeDisplay}
+                            </span>{' '}
+                            <span className="field-hover-field-name">
+                              {previewField.name}
+                              {shouldShowArrayDim(previewField.arrayDim)
+                                ? `[${previewField.arrayDim}]`
+                                : ''}
+                              ;
+                            </span>{' '}
+                            <span className="field-hover-code-comment">
+                              {`// ${formatHex(previewField.offset)}`}
+                            </span>
                           </div>
                         ))}
                         <div className="field-hover-code-line">
                           <span className="field-hover-code-punctuation">{'};'}</span>
                         </div>
                         {remainingCount > 0 ? (
-                          <span className="field-hover-muted">{`+${remainingCount} more values`}</span>
+                          <span className="field-hover-muted">{`+${remainingCount} more fields`}</span>
                         ) : null}
                       </div>
                     </div>
                   )
-                }
-
-                const previewFields = detail.fields.slice(0, 8)
-                const remainingCount = detail.fields.length - previewFields.length
-
-                return (
-                  <div key={detail.name} className="field-hover-section">
-                    <div className="field-hover-section-head">
-                      <strong>{detail.name}</strong>
-                      <span>{`size ${formatHex(detail.size)}`}</span>
-                    </div>
-                    <div className="field-hover-code">
-                      <div className="field-hover-code-line">
-                        <span className="field-hover-code-keyword">struct</span>{' '}
-                        <span className="field-hover-code-type-name">{detail.name}</span>{' '}
-                        <span className="field-hover-code-comment">{`// size ${formatHex(detail.size)}`}</span>
-                      </div>
-                      <div className="field-hover-code-line">
-                        <span className="field-hover-code-punctuation">{'{'}</span>
-                      </div>
-                      {previewFields.map((previewField) => (
-                        <div
-                          key={`${detail.name}-${previewField.name}`}
-                          className="field-hover-code-line field-hover-code-line-field"
-                        >
-                          <span className="field-hover-code-indent" aria-hidden="true">
-                            {'  '}
-                          </span>
-                          <span className="field-hover-field-type">
-                            {previewField.typeDisplay}
-                          </span>{' '}
-                          <span className="field-hover-field-name">
-                            {previewField.name}
-                            {shouldShowArrayDim(previewField.arrayDim)
-                              ? `[${previewField.arrayDim}]`
-                              : ''}
-                            ;
-                          </span>{' '}
-                          <span className="field-hover-code-comment">
-                            {`// ${formatHex(previewField.offset)}`}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="field-hover-code-line">
-                        <span className="field-hover-code-punctuation">{'};'}</span>
-                      </div>
-                      {remainingCount > 0 ? (
-                        <span className="field-hover-muted">{`+${remainingCount} more fields`}</span>
-                      ) : null}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : loadingLinkedDetails ? (
-            <span className="field-hover-muted">Loading type fields...</span>
-          ) : linkedSymbols.length > 0 ? (
-            <span className="field-hover-muted">No referenced type preview.</span>
-          ) : null}
-        </span>
+                })}
+              </div>
+            ) : (
+              <span className="field-hover-muted">Loading type fields...</span>
+            )}
+          </span>
+        ) : null}
       </span>
     ),
     unmatchedLinks: inlineTypeDisplay.unmatchedLinks,
@@ -1614,7 +1615,7 @@ function App() {
                         </button>
                       ))
                     ) : (
-                      <p className="empty-state">No parent chain available.</p>
+                      <div className="empty-placeholder" aria-hidden="true" />
                     )}
                   </div>
                 </section>
@@ -1749,7 +1750,7 @@ function App() {
                         )
                       })}
                       {detail.fields.length === 0 ? (
-                        <p className="empty-state">No field entries available.</p>
+                        <div className="empty-placeholder" aria-hidden="true" />
                       ) : null}
                     </div>
                   </section>
@@ -1871,7 +1872,7 @@ function App() {
                         )
                       })}
                       {detail.methods.length === 0 ? (
-                        <p className="empty-state">No method entries available.</p>
+                        <div className="empty-placeholder" aria-hidden="true" />
                       ) : null}
                     </div>
                   </section>

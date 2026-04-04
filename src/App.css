@@ -1018,6 +1018,10 @@
   margin-top: 18px;
 }
 
+.empty-placeholder {
+  min-height: 18px;
+}
+
 .field-group {
   border: 1px solid rgba(244, 170, 59, 0.28);
   border-radius: 18px;

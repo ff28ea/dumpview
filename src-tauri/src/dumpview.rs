@@ -276,30 +276,34 @@ pub fn search_symbols(
             }
         }
     } else {
-        if let (Some(db), Some(fts_query)) = (guard.db.as_ref(), build_fts_query(query)) {
-            let mut stmt = db
-                .prepare(
-                    "SELECT name FROM symbol_fts WHERE symbol_fts MATCH ?1 \
+        append_priority_name_matches(&guard.sorted_names, query, capped_limit, &mut seen, &mut ordered_names);
+
+        if ordered_names.len() < capped_limit {
+            if let (Some(db), Some(fts_query)) = (guard.db.as_ref(), build_fts_query(query)) {
+                let mut stmt = db
+                    .prepare(
+                        "SELECT name FROM symbol_fts WHERE symbol_fts MATCH ?1 \
            ORDER BY bm25(symbol_fts), length(name) LIMIT ?2",
-                )
-                .map_err(|err| format!("failed to prepare FTS search: {err}"))?;
+                    )
+                    .map_err(|err| format!("failed to prepare FTS search: {err}"))?;
 
-            let rows = stmt
-                .query_map(params![fts_query, capped_limit as i64], |row| {
-                    row.get::<_, String>(0)
-                })
-                .map_err(|err| format!("failed to execute FTS search: {err}"))?;
+                let rows = stmt
+                    .query_map(params![fts_query, capped_limit as i64], |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .map_err(|err| format!("failed to execute FTS search: {err}"))?;
 
-            for row in rows {
-                let name = row.map_err(|err| format!("failed to read FTS row: {err}"))?;
-                if seen.insert(name.clone()) {
-                    ordered_names.push(name);
+                for row in rows {
+                    let name = row.map_err(|err| format!("failed to read FTS row: {err}"))?;
+                    if seen.insert(name.clone()) {
+                        ordered_names.push(name);
+                    }
                 }
             }
         }
 
         if ordered_names.len() < capped_limit {
-            append_fallback_matches(
+            append_contains_matches(
                 &guard.sorted_names,
                 &guard.search_docs,
                 query,
@@ -1050,7 +1054,53 @@ fn build_search_subtitle(detail: &SymbolDetail) -> String {
     parts.join(" | ")
 }
 
-fn append_fallback_matches(
+fn append_priority_name_matches(
+    sorted_names: &[String],
+    query: &str,
+    limit: usize,
+    seen: &mut HashSet<String>,
+    ordered_names: &mut Vec<String>,
+) {
+    let collapsed_query = collapse_searchable(query);
+    let mut exact_name = Vec::new();
+    let mut exact_collapsed = Vec::new();
+    let mut prefix = Vec::new();
+
+    for name in sorted_names {
+        if seen.contains(name) {
+            continue;
+        }
+
+        let collapsed_name = collapse_searchable(name);
+
+        if name == query {
+            exact_name.push(name.clone());
+            continue;
+        }
+
+        if !collapsed_query.is_empty() && collapsed_name == collapsed_query {
+            exact_collapsed.push(name.clone());
+            continue;
+        }
+
+        if !collapsed_query.is_empty() && collapsed_name.starts_with(&collapsed_query) {
+            prefix.push(name.clone());
+        }
+    }
+
+    for bucket in [exact_name, exact_collapsed, prefix] {
+        for name in bucket {
+            if seen.insert(name.clone()) {
+                ordered_names.push(name);
+            }
+            if ordered_names.len() >= limit {
+                return;
+            }
+        }
+    }
+}
+
+fn append_contains_matches(
     sorted_names: &[String],
     search_docs: &HashMap<String, String>,
     query: &str,
@@ -1061,8 +1111,6 @@ fn append_fallback_matches(
     let collapsed_query = collapse_searchable(query);
     let query_tokens = searchable_tokens(query);
 
-    let mut exact = Vec::new();
-    let mut prefix = Vec::new();
     let mut name_contains = Vec::new();
     let mut doc_contains = Vec::new();
 
@@ -1077,16 +1125,6 @@ fn append_fallback_matches(
             .map(String::as_str)
             .unwrap_or_default();
 
-        if !collapsed_query.is_empty() && collapsed_name == collapsed_query {
-            exact.push(name.clone());
-            continue;
-        }
-
-        if !collapsed_query.is_empty() && collapsed_name.starts_with(&collapsed_query) {
-            prefix.push(name.clone());
-            continue;
-        }
-
         if !collapsed_query.is_empty() && collapsed_name.contains(&collapsed_query) {
             name_contains.push(name.clone());
             continue;
@@ -1097,7 +1135,7 @@ fn append_fallback_matches(
         }
     }
 
-    for bucket in [exact, prefix, name_contains, doc_contains] {
+    for bucket in [name_contains, doc_contains] {
         for name in bucket {
             if seen.insert(name.clone()) {
                 ordered_names.push(name);
