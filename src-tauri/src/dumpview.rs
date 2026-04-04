@@ -5,12 +5,16 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::Manager;
 
 const CLASSES_FILE: &str = "ClassesInfo.json";
 const STRUCTS_FILE: &str = "StructsInfo.json";
 const FUNCTIONS_FILE: &str = "FunctionsInfo.json";
 const ENUMS_FILE: &str = "EnumsInfo.json";
 const OFFSETS_FILE: &str = "OffsetsInfo.json";
+const NODE_WORKSPACES_DIR: &str = "node-workspaces";
+const NODE_WORKSPACE_EXTENSION: &str = "json";
 
 #[derive(Default)]
 pub struct AppState {
@@ -153,6 +157,51 @@ pub struct SymbolDetail {
     pub method_count: usize,
     pub relation_count: usize,
     pub child_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeWorkspaceDocument {
+    pub id: String,
+    pub title: String,
+    pub source_label: String,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+    pub nodes: Vec<NodeWorkspaceNode>,
+    pub edges: Vec<NodeWorkspaceEdge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeWorkspaceNode {
+    pub id: String,
+    pub symbol_name: String,
+    pub x: f64,
+    pub y: f64,
+    pub selected_field_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeWorkspaceEdge {
+    pub id: String,
+    pub source_node_id: String,
+    pub source_handle_id: Option<String>,
+    pub target_node_id: String,
+    pub label: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeWorkspaceSummary {
+    pub id: String,
+    pub title: String,
+    pub source_label: String,
+    pub updated_at_ms: u64,
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub path: String,
 }
 
 struct LoadedDataset {
@@ -335,6 +384,222 @@ pub fn get_symbol_detail(
         .get(&name)
         .cloned()
         .ok_or_else(|| format!("symbol not found: {name}"))
+}
+
+#[tauri::command]
+pub fn list_node_workspaces(
+    app_handle: tauri::AppHandle,
+    source_label: String,
+) -> Result<Vec<NodeWorkspaceSummary>, String> {
+    let workspace_dir = ensure_node_workspace_dir(&app_handle, &source_label)?;
+
+    let mut workspaces = Vec::new();
+    let entries = fs::read_dir(&workspace_dir).map_err(|err| {
+        format!(
+            "failed to read workspace directory {}: {err}",
+            workspace_dir.to_string_lossy()
+        )
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("failed to read workspace entry: {err}"))?;
+        let path = entry.path();
+
+        if !path.is_file()
+            || path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .map(|extension| extension != NODE_WORKSPACE_EXTENSION)
+                .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let Ok(document) = read_node_workspace_document(&path) else {
+            continue;
+        };
+
+        workspaces.push(build_node_workspace_summary(document, &path));
+    }
+
+    workspaces.sort_by(|left, right| {
+        right
+            .updated_at_ms
+            .cmp(&left.updated_at_ms)
+            .then(left.title.cmp(&right.title))
+    });
+
+    Ok(workspaces)
+}
+
+#[tauri::command]
+pub fn create_node_workspace(
+    app_handle: tauri::AppHandle,
+    source_label: String,
+    title: Option<String>,
+) -> Result<NodeWorkspaceDocument, String> {
+    let workspace_dir = ensure_node_workspace_dir(&app_handle, &source_label)?;
+    let now_ms = current_timestamp_ms()?;
+    let normalized_title = normalize_workspace_title(title.as_deref(), now_ms);
+    let workspace_id =
+        create_unique_workspace_id(&workspace_dir, &normalized_title, now_ms, None);
+    let workspace_path = build_node_workspace_path(&workspace_dir, &workspace_id);
+
+    let document = NodeWorkspaceDocument {
+        id: workspace_id,
+        title: normalized_title,
+        source_label,
+        created_at_ms: now_ms,
+        updated_at_ms: now_ms,
+        nodes: Vec::new(),
+        edges: Vec::new(),
+    };
+
+    write_node_workspace_document(&workspace_path, &document)?;
+
+    Ok(document)
+}
+
+#[tauri::command]
+pub fn load_node_workspace(
+    app_handle: tauri::AppHandle,
+    source_label: String,
+    workspace_id: String,
+) -> Result<NodeWorkspaceDocument, String> {
+    let workspace_dir = ensure_node_workspace_dir(&app_handle, &source_label)?;
+    let workspace_path = build_node_workspace_path(&workspace_dir, &workspace_id);
+
+    read_node_workspace_document(&workspace_path)
+}
+
+#[tauri::command]
+pub fn save_node_workspace(
+    app_handle: tauri::AppHandle,
+    document: NodeWorkspaceDocument,
+) -> Result<NodeWorkspaceSummary, String> {
+    let source_label = document.source_label.trim();
+    if source_label.is_empty() {
+        return Err("workspace source label is required".to_string());
+    }
+
+    let workspace_id = sanitize_workspace_identifier(&document.id);
+    if workspace_id.is_empty() {
+        return Err("workspace id is required".to_string());
+    }
+
+    let workspace_dir = ensure_node_workspace_dir(&app_handle, source_label)?;
+    let workspace_path = build_node_workspace_path(&workspace_dir, &workspace_id);
+    let now_ms = current_timestamp_ms()?;
+
+    let updated_document = NodeWorkspaceDocument {
+        id: workspace_id,
+        title: normalize_workspace_title(Some(&document.title), now_ms),
+        source_label: source_label.to_string(),
+        created_at_ms: if document.created_at_ms == 0 {
+            now_ms
+        } else {
+            document.created_at_ms
+        },
+        updated_at_ms: now_ms,
+        nodes: document.nodes,
+        edges: document.edges,
+    };
+
+    write_node_workspace_document(&workspace_path, &updated_document)?;
+
+    Ok(build_node_workspace_summary(updated_document, &workspace_path))
+}
+
+#[tauri::command]
+pub fn rename_node_workspace(
+    app_handle: tauri::AppHandle,
+    source_label: String,
+    workspace_id: String,
+    title: String,
+) -> Result<NodeWorkspaceDocument, String> {
+    let source_label = source_label.trim();
+    if source_label.is_empty() {
+        return Err("workspace source label is required".to_string());
+    }
+
+    let workspace_id = sanitize_workspace_identifier(&workspace_id);
+    if workspace_id.is_empty() {
+        return Err("workspace id is required".to_string());
+    }
+
+    let workspace_dir = ensure_node_workspace_dir(&app_handle, source_label)?;
+    let current_path = build_node_workspace_path(&workspace_dir, &workspace_id);
+    let current_document = read_node_workspace_document(&current_path)?;
+    let now_ms = current_timestamp_ms()?;
+    let normalized_title = normalize_workspace_title(Some(&title), now_ms);
+    let workspace_seed = if current_document.created_at_ms == 0 {
+        now_ms
+    } else {
+        current_document.created_at_ms
+    };
+    let next_workspace_id = create_unique_workspace_id(
+        &workspace_dir,
+        &normalized_title,
+        workspace_seed,
+        Some(&workspace_id),
+    );
+    let next_path = build_node_workspace_path(&workspace_dir, &next_workspace_id);
+    let next_document = NodeWorkspaceDocument {
+        id: next_workspace_id.clone(),
+        title: normalized_title,
+        source_label: source_label.to_string(),
+        created_at_ms: workspace_seed,
+        updated_at_ms: now_ms,
+        nodes: current_document.nodes,
+        edges: current_document.edges,
+    };
+
+    write_node_workspace_document(&next_path, &next_document)?;
+
+    if next_path != current_path {
+        fs::remove_file(&current_path).map_err(|err| {
+            format!(
+                "failed to remove workspace {}: {err}",
+                current_path.to_string_lossy()
+            )
+        })?;
+    }
+
+    Ok(next_document)
+}
+
+#[tauri::command]
+pub fn delete_node_workspace(
+    app_handle: tauri::AppHandle,
+    source_label: String,
+    workspace_id: String,
+) -> Result<(), String> {
+    let source_label = source_label.trim();
+    if source_label.is_empty() {
+        return Err("workspace source label is required".to_string());
+    }
+
+    let workspace_id = sanitize_workspace_identifier(&workspace_id);
+    if workspace_id.is_empty() {
+        return Err("workspace id is required".to_string());
+    }
+
+    let workspace_dir = ensure_node_workspace_dir(&app_handle, source_label)?;
+    let workspace_path = build_node_workspace_path(&workspace_dir, &workspace_id);
+
+    if !workspace_path.exists() {
+        return Err(format!(
+            "workspace {} does not exist",
+            workspace_path.to_string_lossy()
+        ));
+    }
+
+    fs::remove_file(&workspace_path).map_err(|err| {
+        format!(
+            "failed to delete workspace {}: {err}",
+            workspace_path.to_string_lossy()
+        )
+    })
 }
 
 fn build_dataset(payload: DumpImportPayload) -> Result<LoadedDataset, String> {
@@ -1387,6 +1652,136 @@ fn value_to_readable_string(value: &Value) -> String {
         Value::Number(number) => number.to_string(),
         Value::String(text) => text.clone(),
         _ => value.to_string(),
+    }
+}
+
+fn current_timestamp_ms() -> Result<u64, String> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| format!("failed to get current system time: {err}"))?;
+
+    Ok(elapsed.as_millis() as u64)
+}
+
+fn normalize_workspace_title(title: Option<&str>, fallback_seed: u64) -> String {
+    title
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("Node Workspace {fallback_seed}"))
+}
+
+fn sanitize_workspace_identifier(value: &str) -> String {
+    let mut sanitized = String::new();
+    let mut previous_dash = false;
+
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            sanitized.push(ch.to_ascii_lowercase());
+            previous_dash = false;
+        } else if !previous_dash {
+            sanitized.push('-');
+            previous_dash = true;
+        }
+    }
+
+    sanitized.trim_matches('-').chars().take(64).collect()
+}
+
+fn sanitize_workspace_segment(value: &str, fallback: &str) -> String {
+    let sanitized = sanitize_workspace_identifier(value);
+    if sanitized.is_empty() {
+        fallback.to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn ensure_node_workspace_dir(
+    app_handle: &tauri::AppHandle,
+    source_label: &str,
+) -> Result<PathBuf, String> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("failed to resolve app data directory: {err}"))?;
+    let source_dir = sanitize_workspace_segment(source_label, "default-source");
+    let workspace_dir = app_data_dir.join(NODE_WORKSPACES_DIR).join(source_dir);
+
+    fs::create_dir_all(&workspace_dir).map_err(|err| {
+        format!(
+            "failed to create workspace directory {}: {err}",
+            workspace_dir.to_string_lossy()
+        )
+    })?;
+
+    Ok(workspace_dir)
+}
+
+fn create_unique_workspace_id(
+    workspace_dir: &Path,
+    title: &str,
+    timestamp_ms: u64,
+    current_id: Option<&str>,
+) -> String {
+    let title_slug = sanitize_workspace_segment(title, "workspace");
+    let base_id = format!("{title_slug}-{timestamp_ms}");
+
+    if current_id == Some(base_id.as_str()) || !build_node_workspace_path(workspace_dir, &base_id).exists() {
+        return base_id;
+    }
+
+    let mut suffix = 2;
+    loop {
+        let candidate = format!("{base_id}-{suffix}");
+        if current_id == Some(candidate.as_str())
+            || !build_node_workspace_path(workspace_dir, &candidate).exists()
+        {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+fn build_node_workspace_path(workspace_dir: &Path, workspace_id: &str) -> PathBuf {
+    workspace_dir.join(format!("{workspace_id}.{NODE_WORKSPACE_EXTENSION}"))
+}
+
+fn read_node_workspace_document(path: &Path) -> Result<NodeWorkspaceDocument, String> {
+    let raw = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read workspace {}: {err}", path.to_string_lossy()))?;
+
+    serde_json::from_str(&raw).map_err(|err| {
+        format!(
+            "failed to parse workspace {}: {err}",
+            path.to_string_lossy()
+        )
+    })
+}
+
+fn write_node_workspace_document(
+    path: &Path,
+    document: &NodeWorkspaceDocument,
+) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(document)
+        .map_err(|err| format!("failed to serialize workspace {}: {err}", document.id))?;
+
+    fs::write(path, raw)
+        .map_err(|err| format!("failed to write workspace {}: {err}", path.to_string_lossy()))
+}
+
+fn build_node_workspace_summary(
+    document: NodeWorkspaceDocument,
+    path: &Path,
+) -> NodeWorkspaceSummary {
+    NodeWorkspaceSummary {
+        id: document.id,
+        title: document.title,
+        source_label: document.source_label,
+        updated_at_ms: document.updated_at_ms,
+        node_count: document.nodes.len(),
+        edge_count: document.edges.len(),
+        path: path.to_string_lossy().to_string(),
     }
 }
 

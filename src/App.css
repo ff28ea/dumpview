@@ -16,9 +16,230 @@
   padding: 16px 0 24px;
 }
 
+.app-layout {
+  --layout-max-width: 1880px;
+  --layout-gap: 16px;
+  --layout-edge: 0px;
+  --sidebar-width: 232px;
+  position: relative;
+  width: min(1880px, 100vw);
+  margin: 0;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.app-layout::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--sidebar-width) - 1px);
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.app-layout.sidebar-collapsed {
+  --sidebar-width: 72px;
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.app-sidebar {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: none;
+  background:
+    linear-gradient(180deg, rgba(8, 14, 24, 0.98), rgba(8, 14, 24, 0.9)),
+    rgba(8, 14, 24, 0.96);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(16px);
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  margin-top: -16px;
+  padding: 6px 8px 10px;
+  border-radius: 0 0 18px 18px;
+}
+
+.app-sidebar-toggle {
+  width: 26px;
+  height: 26px;
+  justify-self: end;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-strong);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.app-sidebar-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font: 700 13px/1 var(--sans);
+}
+
+.app-sidebar-nav {
+  display: grid;
+  gap: 4px;
+}
+
+.app-sidebar-workspace-slot {
+  display: grid;
+  min-width: 0;
+}
+
+.app-sidebar-nav-item {
+  position: relative;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  align-items: start;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.app-sidebar-nav-item::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 6px;
+  width: 2px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  opacity: 0;
+  transition:
+    opacity 160ms ease,
+    background 160ms ease;
+}
+
+.app-sidebar-nav-item:hover,
+.app-sidebar-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.app-sidebar-nav-item.active {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-sidebar-nav-item:hover::before {
+  opacity: 0.45;
+  background: rgba(91, 166, 255, 0.72);
+}
+
+.app-sidebar-nav-item.active::before {
+  opacity: 1;
+  background: linear-gradient(180deg, #f4aa3b, #ec7140);
+}
+
+.app-sidebar-nav-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.app-sidebar-nav-icon {
+  display: none;
+}
+
+.app-sidebar-nav-copy strong,
+.app-sidebar-nav-copy span {
+  overflow-wrap: anywhere;
+}
+
+.app-sidebar-nav-copy strong {
+  color: var(--text-strong);
+  font: 600 12px/1.2 var(--sans);
+}
+
+.app-sidebar-nav-copy span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar {
+  gap: 6px;
+  padding: 0 6px 8px;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-toggle {
+  justify-self: center;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-nav-item {
+  min-height: 42px;
+  padding: 0;
+  place-items: center;
+  border-radius: 12px;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-nav-item::before {
+  top: 50%;
+  left: 4px;
+  height: 20px;
+  transform: translateY(-50%);
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-nav-copy {
+  display: none;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-workspace-slot {
+  display: none;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-nav-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-strong);
+  font: 700 12px/1 var(--sans);
+  letter-spacing: 0.02em;
+}
+
+.app-content-area {
+  min-width: 0;
+}
+
 .app-shell {
-  width: min(1680px, calc(100vw - 32px));
-  margin: 0 auto;
+  width: 100%;
   display: grid;
   gap: 16px;
 }
@@ -85,6 +306,31 @@
   max-width: 100%;
   min-width: min(320px, 100%);
   padding: 0;
+}
+
+.titlebar-page-context {
+  position: relative;
+  z-index: 2;
+  width: min(820px, 100%);
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 0 8px;
+  color: var(--text-muted);
+}
+
+.titlebar-page-context strong,
+.titlebar-page-context span {
+  overflow-wrap: anywhere;
+}
+
+.titlebar-page-context strong {
+  color: var(--text-strong);
+  font: 700 13px/1.1 var(--heading);
+}
+
+.titlebar-page-context span {
+  font-size: 12px;
 }
 
 .titlebar-search {
@@ -1519,17 +1765,16 @@
 }
 
 @media (min-width: 921px) {
-  .app-shell {
+  .app-content-area {
     padding-bottom: 104px;
   }
 
   .status-strip {
     position: fixed;
-    left: 50%;
+    right: 16px;
     bottom: 16px;
+    left: calc(var(--layout-edge) + var(--sidebar-width) + var(--layout-gap));
     z-index: 50;
-    width: min(1440px, calc(100vw - 32px));
-    transform: translateX(-50%);
     box-shadow:
       0 20px 48px rgba(0, 0, 0, 0.34),
       0 0 0 1px rgba(255, 255, 255, 0.04);
@@ -1559,8 +1804,21 @@
     padding: 10px 0 18px;
   }
 
-  .app-shell {
-    width: min(100vw - 20px, 100%);
+  .app-layout {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .app-layout::before {
+    content: none;
+  }
+
+  .app-sidebar {
+    position: static;
+  }
+
+  .app-layout.sidebar-collapsed {
+    grid-template-columns: 1fr;
   }
 
   .titlebar {
@@ -1676,7 +1934,8 @@
     padding: 4px 6px;
   }
 
-  .titlebar-center {
+  .titlebar-center,
+  .titlebar-page-context {
     width: auto;
     min-width: 0;
     gap: 6px;

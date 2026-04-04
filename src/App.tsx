@@ -12,9 +12,11 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import './App.css'
 import FrameworkGraphModal from './FrameworkGraphModal'
+import NodeWorkspacePage from './NodeWorkspacePage'
 
 type SymbolKind = 'class' | 'struct' | 'enum'
 type KindFilter = 'all' | SymbolKind
+type AppPage = 'browser' | 'workspace'
 
 interface OffsetEntry {
   key: string
@@ -634,6 +636,8 @@ function App() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null)
   const [loadingResults, setLoadingResults] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [currentPage, setCurrentPage] = useState<AppPage>('browser')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [offsetsMenuOpen, setOffsetsMenuOpen] = useState(false)
   const [filterMenuOpen, setFilterMenuOpen] = useState(false)
@@ -1030,6 +1034,11 @@ function App() {
     jumpToSymbol(name)
   }
 
+  function openSymbolFromWorkspace(name: string) {
+    setCurrentPage('browser')
+    jumpToSymbol(name)
+  }
+
   async function copyTextToClipboard(value: string) {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value)
@@ -1307,93 +1316,102 @@ function App() {
             }}
           />
 
-          <div className="titlebar-center">
-            <label className="visually-hidden" htmlFor="titlebar-search">
-              Quick Search
-            </label>
-            <div ref={titlebarSearchRef} className="titlebar-search">
-              <input
-                id="titlebar-search"
-                type="search"
-                autoComplete="off"
-                placeholder="Search by type name, field, method or related symbol..."
-                value={query}
-                onFocus={() => {
-                  setActionMenuOpen(false)
-                  setOffsetsMenuOpen(false)
-                  setFrameworkGraphOpen(false)
-                  setFilterMenuOpen(false)
-                  setSearchHistoryOpen(true)
-                }}
-                onChange={(event) => {
-                  setQuery(event.target.value)
-                  setSearchHistoryOpen(true)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    submitSearchTerm(query)
-                  }
-                }}
-              />
+          {currentPage === 'browser' ? (
+            <div className="titlebar-center">
+              <label className="visually-hidden" htmlFor="titlebar-search">
+                Quick Search
+              </label>
+              <div ref={titlebarSearchRef} className="titlebar-search">
+                <input
+                  id="titlebar-search"
+                  type="search"
+                  autoComplete="off"
+                  placeholder="Search by type name, field, method or related symbol..."
+                  value={query}
+                  onFocus={() => {
+                    setActionMenuOpen(false)
+                    setOffsetsMenuOpen(false)
+                    setFrameworkGraphOpen(false)
+                    setFilterMenuOpen(false)
+                    setSearchHistoryOpen(true)
+                  }}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    setSearchHistoryOpen(true)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      submitSearchTerm(query)
+                    }
+                  }}
+                />
 
-              {summary && searchHistoryOpen && visibleSearchHistory.length > 0 ? (
-                <div className="search-history-popover">
-                  <div className="search-history-head">
-                    <span>Recent Searches</span>
+                {summary && searchHistoryOpen && visibleSearchHistory.length > 0 ? (
+                  <div className="search-history-popover">
+                    <div className="search-history-head">
+                      <span>Recent Searches</span>
+                    </div>
+                    <div className="search-history-list">
+                      {visibleSearchHistory.map((entry) => (
+                        <button
+                          key={entry}
+                          type="button"
+                          className="search-history-item"
+                          onClick={() => selectSearchHistoryEntry(entry)}
+                        >
+                          {entry}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="search-history-list">
-                    {visibleSearchHistory.map((entry) => (
+                ) : null}
+              </div>
+
+              <div ref={filterMenuRef} className="filter-combo-shell">
+                <button
+                  type="button"
+                  className={
+                    filterMenuOpen ? 'filter-combo-trigger active' : 'filter-combo-trigger'
+                  }
+                  aria-haspopup="menu"
+                  aria-expanded={filterMenuOpen}
+                  onClick={() => {
+                    setActionMenuOpen(false)
+                    setOffsetsMenuOpen(false)
+                    setFrameworkGraphOpen(false)
+                    setFilterMenuOpen((open) => !open)
+                  }}
+                >
+                  <span className="filter-combo-value">{kindLabels[kindFilter]}</span>
+                  <span className="filter-combo-caret" aria-hidden="true" />
+                </button>
+
+                {filterMenuOpen ? (
+                  <div className="filter-combo-menu" role="menu">
+                    {(['all', 'class', 'struct', 'enum'] as const).map((filter) => (
                       <button
-                        key={entry}
+                        key={filter}
                         type="button"
-                        className="search-history-item"
-                        onClick={() => selectSearchHistoryEntry(entry)}
+                        className={
+                          filter === kindFilter ? 'filter-combo-item active' : 'filter-combo-item'
+                        }
+                        role="menuitemradio"
+                        aria-checked={filter === kindFilter}
+                        onClick={() => selectKindFilter(filter)}
                       >
-                        {entry}
+                        {kindLabels[filter]}
                       </button>
                     ))}
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
-
-            <div ref={filterMenuRef} className="filter-combo-shell">
-              <button
-                type="button"
-                className={filterMenuOpen ? 'filter-combo-trigger active' : 'filter-combo-trigger'}
-                aria-haspopup="menu"
-                aria-expanded={filterMenuOpen}
-                onClick={() => {
-                  setActionMenuOpen(false)
-                  setOffsetsMenuOpen(false)
-                  setFrameworkGraphOpen(false)
-                  setFilterMenuOpen((open) => !open)
-                }}
-              >
-                <span className="filter-combo-value">{kindLabels[kindFilter]}</span>
-                <span className="filter-combo-caret" aria-hidden="true" />
-              </button>
-
-              {filterMenuOpen ? (
-                <div className="filter-combo-menu" role="menu">
-                  {(['all', 'class', 'struct', 'enum'] as const).map((filter) => (
-                    <button
-                      key={filter}
-                      type="button"
-                      className={
-                        filter === kindFilter ? 'filter-combo-item active' : 'filter-combo-item'
-                      }
-                      role="menuitemradio"
-                      aria-checked={filter === kindFilter}
-                      onClick={() => selectKindFilter(filter)}
-                    >
-                      {kindLabels[filter]}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
+          ) : (
+            <div
+              id="node-workspace-titlebar-slot"
+              className="titlebar-page-context workspace-titlebar-slot"
+            />
+          )}
         </div>
 
         {runningInTauri ? (
@@ -1434,7 +1452,62 @@ function App() {
       </header>
 
       <div className="window-scroll-area">
-        <div className="app-shell">
+        <div className={sidebarCollapsed ? 'app-layout sidebar-collapsed' : 'app-layout'}>
+          <aside className="app-sidebar">
+            <button
+              type="button"
+              className="app-sidebar-toggle"
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            >
+              <span className="app-sidebar-toggle-icon" aria-hidden="true">
+                {sidebarCollapsed ? '>' : '<'}
+              </span>
+            </button>
+
+            <nav className="app-sidebar-nav">
+              <button
+                type="button"
+                className={
+                  currentPage === 'browser' ? 'app-sidebar-nav-item active' : 'app-sidebar-nav-item'
+                }
+                onClick={() => setCurrentPage('browser')}
+              >
+                <span className="app-sidebar-nav-icon" aria-hidden="true">
+                  S
+                </span>
+                <span className="app-sidebar-nav-copy">
+                  <strong>Symbol Browser</strong>
+                  <span>Inspect dump symbols, fields, methods and relations.</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className={
+                  currentPage === 'workspace'
+                    ? 'app-sidebar-nav-item active'
+                    : 'app-sidebar-nav-item'
+                }
+                onClick={() => setCurrentPage('workspace')}
+              >
+                <span className="app-sidebar-nav-icon" aria-hidden="true">
+                  N
+                </span>
+                <span className="app-sidebar-nav-copy">
+                  <strong>Node Canvas</strong>
+                  <span>Build freeform graphs from nodes, fields and parent branches.</span>
+                </span>
+              </button>
+            </nav>
+
+            {currentPage === 'workspace' ? (
+              <div id="node-workspace-sidebar-slot" className="app-sidebar-workspace-slot" />
+            ) : null}
+          </aside>
+
+          <div className="app-content-area">
+            <div className="app-shell">
           <section className="status-strip">
             <div className="status-card status-card-source">
               <span className="status-label">Source</span>
@@ -1470,7 +1543,8 @@ function App() {
             </section>
           ) : null}
 
-          <section className="workspace">
+          {currentPage === 'browser' ? (
+            <section className="workspace">
             <aside className="panel results-panel">
               <div className="panel-header">
                 <h2>Search Results</h2>
@@ -1889,7 +1963,14 @@ function App() {
             </div>
           )}
             </main>
-          </section>
+            </section>
+          ) : (
+            <NodeWorkspacePage
+              runningInTauri={runningInTauri}
+              sourceLabel={summary?.sourceLabel ?? null}
+              onOpenSymbol={openSymbolFromWorkspace}
+            />
+          )}
 
           {relationViewOpen && detail ? (
             <div className="relation-overlay" onClick={() => setRelationViewOpen(false)}>
@@ -1996,6 +2077,8 @@ function App() {
             onClose={() => setFrameworkGraphOpen(false)}
             onSelectSymbol={jumpToFrameworkSymbol}
           />
+            </div>
+          </div>
         </div>
       </div>
     </div>

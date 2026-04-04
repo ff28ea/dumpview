@@ -18,7 +18,13 @@ pub fn run() {
             dumpview::load_dump_payload,
             dumpview::load_sample_dump,
             dumpview::search_symbols,
-            dumpview::get_symbol_detail
+            dumpview::get_symbol_detail,
+            dumpview::list_node_workspaces,
+            dumpview::create_node_workspace,
+            dumpview::load_node_workspace,
+            dumpview::save_node_workspace,
+            dumpview::rename_node_workspace,
+            dumpview::delete_node_workspace
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
