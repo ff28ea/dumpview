@@ -211,6 +211,31 @@ function getFieldSourceHandleId(field: Pick<WorkspaceFieldEntry, 'selectionId'>)
   return `field-${field.selectionId}`
 }
 
+function findWorkspaceNodeBySymbolName(
+  document: NodeWorkspaceDocument,
+  symbolName: string,
+) {
+  return document.nodes.find((node) => node.symbolName === symbolName) ?? null
+}
+
+function hasWorkspaceEdge(
+  document: NodeWorkspaceDocument,
+  edgeToMatch: Pick<
+    NodeWorkspaceEdge,
+    'sourceNodeId' | 'targetNodeId' | 'label' | 'kind' | 'sourceHandleId'
+  >,
+) {
+  return document.edges.some((edge) => {
+    return (
+      edge.sourceNodeId === edgeToMatch.sourceNodeId &&
+      edge.targetNodeId === edgeToMatch.targetNodeId &&
+      edge.label === edgeToMatch.label &&
+      edge.kind === edgeToMatch.kind &&
+      (edge.sourceHandleId ?? null) === (edgeToMatch.sourceHandleId ?? null)
+    )
+  })
+}
+
 function areStringListsEqual(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
@@ -242,18 +267,17 @@ function areWorkspaceFieldEntriesEqual(left: WorkspaceFieldEntry[], right: Works
 
 function getBranchableFieldTarget(
   nodeSymbolName: string,
-  field: Pick<WorkspaceFieldEntry, 'ownerName' | 'links'>,
+  field: Pick<WorkspaceFieldEntry, 'links'>,
 ) {
-  if (field.ownerName !== nodeSymbolName || field.links.length !== 1) {
+  const branchableLinks = field.links.filter((link) => {
+    return link.kind !== 'enum' && link.name !== nodeSymbolName
+  })
+
+  if (branchableLinks.length !== 1) {
     return null
   }
 
-  const [link] = field.links
-  if (link.kind === 'enum') {
-    return null
-  }
-
-  return link.name
+  return branchableLinks[0].name
 }
 
 function getInheritanceOwners(symbolName: string, parentNames: string[]) {
@@ -338,20 +362,25 @@ function isFieldSelected(node: NodeWorkspaceNode, field: WorkspaceFieldEntry) {
   )
 }
 
-function getFieldSelectionOrder(node: NodeWorkspaceNode, field: WorkspaceFieldEntry) {
-  const directIndex = node.selectedFieldNames.indexOf(field.selectionId)
-  if (directIndex !== -1) {
-    return directIndex
+function compareWorkspaceFieldsByOffset(left: WorkspaceFieldEntry, right: WorkspaceFieldEntry) {
+  if (left.offset != null && right.offset != null && left.offset !== right.offset) {
+    return left.offset - right.offset
   }
 
-  if (field.ownerName === node.symbolName) {
-    const legacyIndex = node.selectedFieldNames.indexOf(field.name)
-    if (legacyIndex !== -1) {
-      return legacyIndex
-    }
+  if (left.offset != null && right.offset == null) {
+    return -1
   }
 
-  return Number.MAX_SAFE_INTEGER
+  if (left.offset == null && right.offset != null) {
+    return 1
+  }
+
+  const ownerComparison = left.ownerName.localeCompare(right.ownerName)
+  if (ownerComparison !== 0) {
+    return ownerComparison
+  }
+
+  return left.name.localeCompare(right.name)
 }
 
 function estimateWorkspaceNodeLayout(
@@ -846,10 +875,7 @@ function NodeWorkspacePage({
           : []
         const selectedFields = availableFields.filter((field) => isFieldSelected(node, field))
 
-        selectedFields.sort(
-          (left, right) =>
-            getFieldSelectionOrder(node, left) - getFieldSelectionOrder(node, right),
-        )
+        selectedFields.sort(compareWorkspaceFieldsByOffset)
 
         return {
           id: node.id,
@@ -1442,6 +1468,12 @@ function NodeWorkspacePage({
       return
     }
 
+    const existingNode = findWorkspaceNodeBySymbolName(current, symbolName)
+    if (existingNode) {
+      setSelectedNodeId(existingNode.id)
+      return
+    }
+
     const index = current.nodes.length
     const nextNode: NodeWorkspaceNode = {
       id: createClientId('node'),
@@ -1488,6 +1520,36 @@ function NodeWorkspacePage({
       return
     }
 
+    if (targetName === sourceNode.symbolName) {
+      return
+    }
+
+    const existingTargetNode = findWorkspaceNodeBySymbolName(current, targetName)
+    if (existingTargetNode) {
+      if (existingTargetNode.id === sourceNodeId) {
+        return
+      }
+
+      const nextEdge: NodeWorkspaceEdge = {
+        id: createClientId('edge'),
+        sourceNodeId,
+        sourceHandleId: sourceHandleId ?? null,
+        targetNodeId: existingTargetNode.id,
+        label: fieldName,
+        kind: 'field',
+      }
+
+      if (!hasWorkspaceEdge(current, nextEdge)) {
+        mutateActiveDocument((document) => ({
+          ...document,
+          edges: [...document.edges, nextEdge],
+        }))
+      }
+
+      setSelectedNodeId(existingTargetNode.id)
+      return
+    }
+
     const branchCount = current.edges.filter(
       (edge) => edge.kind === 'field' && edge.sourceNodeId === sourceNodeId,
     ).length
@@ -1520,6 +1582,35 @@ function NodeWorkspacePage({
     const current = activeDocumentRef.current
     const targetNode = current?.nodes.find((node) => node.id === targetNodeId)
     if (!current || !targetNode) {
+      return
+    }
+
+    if (parentName === targetNode.symbolName) {
+      return
+    }
+
+    const existingParentNode = findWorkspaceNodeBySymbolName(current, parentName)
+    if (existingParentNode) {
+      if (existingParentNode.id === targetNodeId) {
+        return
+      }
+
+      const nextEdge: NodeWorkspaceEdge = {
+        id: createClientId('edge'),
+        sourceNodeId: existingParentNode.id,
+        targetNodeId,
+        label: 'inherits',
+        kind: 'parent',
+      }
+
+      if (!hasWorkspaceEdge(current, nextEdge)) {
+        mutateActiveDocument((document) => ({
+          ...document,
+          edges: [...document.edges, nextEdge],
+        }))
+      }
+
+      setSelectedNodeId(existingParentNode.id)
       return
     }
 
@@ -1664,6 +1755,10 @@ function NodeWorkspacePage({
           inspectorDetail.parents.map((parent) => parent.name),
           visibleInspectorFields,
         )
+      : []
+  const availableInspectorParents =
+    inspectorNode && inspectorDetail
+      ? inspectorDetail.parents.filter((parent) => parent.name !== inspectorNode.symbolName)
       : []
   const workspaceFileBusy = loadingDocument || savingDocument
 
@@ -2004,12 +2099,12 @@ function NodeWorkspacePage({
                   <div className="workspace-node-inspector-section">
                     <div className="node-workspace-block-head">
                       <strong>Parent Classes</strong>
-                      <span>{inspectorDetail.parents.length} available</span>
+                      <span>{availableInspectorParents.length} available</span>
                     </div>
 
                     <div className="node-workspace-chip-row">
-                      {inspectorDetail.parents.length > 0 ? (
-                        inspectorDetail.parents.map((parent) => (
+                      {availableInspectorParents.length > 0 ? (
+                        availableInspectorParents.map((parent) => (
                           <button
                             key={`${inspectorNode.id}-${parent.name}`}
                             type="button"
