@@ -12,11 +12,13 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import './App.css'
 import FrameworkGraphModal from './FrameworkGraphModal'
+import GameBrowserPage from './GameBrowserPage'
 import NodeWorkspacePage from './NodeWorkspacePage'
 
 type SymbolKind = 'class' | 'struct' | 'enum'
 type KindFilter = 'all' | SymbolKind
-type AppPage = 'browser' | 'workspace'
+type AppPage = 'browser' | 'workspace' | 'games'
+type ThemeMode = 'dark' | 'light'
 
 interface OffsetEntry {
   key: string
@@ -144,6 +146,7 @@ const relationLabels: Record<string, string> = {
 
 const searchHistoryStoragePrefix = 'dumpview:search-history'
 const maxSearchHistoryItems = 12
+const themeStorageKey = 'dumpview:theme'
 
 function kindLabel(kind: SymbolKind) {
   return kindLabels[kind]
@@ -617,6 +620,23 @@ function normalizeError(error: unknown) {
   return String(error)
 }
 
+function readPreferredTheme(): ThemeMode {
+  if (typeof window === 'undefined') {
+    return 'dark'
+  }
+
+  try {
+    const storedTheme = window.localStorage.getItem(themeStorageKey)
+    if (storedTheme === 'dark' || storedTheme === 'light') {
+      return storedTheme
+    }
+  } catch {
+    // Ignore storage failures and fall back to the default theme.
+  }
+
+  return 'dark'
+}
+
 function App() {
   const runningInTauri = isTauri()
   const directoryInputRef = useRef<HTMLInputElement | null>(null)
@@ -644,6 +664,7 @@ function App() {
   const [relationViewOpen, setRelationViewOpen] = useState(false)
   const [frameworkGraphOpen, setFrameworkGraphOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(readPreferredTheme)
   const [copyLabel, setCopyLabel] = useState('Copy C++')
   const [copiedOffsetValue, setCopiedOffsetValue] = useState<string | null>(null)
   const [linkedTypeDetailCache, setLinkedTypeDetailCache] = useState<
@@ -654,6 +675,15 @@ function App() {
   const deferredQuery = useDeferredValue(query)
   const searchHistoryStorageKey = summary ? buildSearchHistoryStorageKey(summary) : null
 
+  function applyLoadedSummary(nextSummary: LoadSummary) {
+    setSummary(nextSummary)
+    setSelectedName(nextSummary.landingSymbol)
+    setQuery('')
+    setKindFilter('all')
+    setError(null)
+    setDetail(null)
+  }
+
   async function loadSampleDump() {
     if (!runningInTauri) {
       setError('Run this UI through Tauri to access local files and SQLite.')
@@ -663,12 +693,7 @@ function App() {
     setBusyLabel('Loading sample Dumpspace and building the FTS5 index...')
     try {
       const nextSummary = await invoke<LoadSummary>('load_sample_dump')
-      setSummary(nextSummary)
-      setSelectedName(nextSummary.landingSymbol)
-      setQuery('')
-      setKindFilter('all')
-      setError(null)
-      setDetail(null)
+      applyLoadedSummary(nextSummary)
     } catch (loadError) {
       setError(normalizeError(loadError))
     } finally {
@@ -690,12 +715,7 @@ function App() {
         if (cancelled) {
           return
         }
-        setSummary(nextSummary)
-        setSelectedName(nextSummary.landingSymbol)
-        setQuery('')
-        setKindFilter('all')
-        setError(null)
-        setDetail(null)
+        applyLoadedSummary(nextSummary)
       })
       .catch((loadError) => {
         if (!cancelled) {
@@ -801,6 +821,20 @@ function App() {
     setCopyLabel('Copy C++')
     setRelationViewOpen(false)
   }, [selectedName])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+
+    document.documentElement.dataset.theme = themeMode
+
+    try {
+      window.localStorage.setItem(themeStorageKey, themeMode)
+    } catch {
+      // Ignore storage write failures and keep the current session theme only.
+    }
+  }, [themeMode])
 
   useEffect(() => {
     linkedTypeDetailCacheRef.current = linkedTypeDetailCache
@@ -920,6 +954,30 @@ function App() {
     }
   }, [runningInTauri])
 
+  async function loadDumpPayload(
+    payload: DumpImportPayload,
+    busyMessage: string,
+    nextPage: AppPage = 'browser',
+  ) {
+    if (!runningInTauri) {
+      setError('Dump import is only available in the Tauri app.')
+      return
+    }
+
+    setBusyLabel(busyMessage)
+
+    try {
+      const nextSummary = await invoke<LoadSummary>('load_dump_payload', { payload })
+      applyLoadedSummary(nextSummary)
+      setCurrentPage(nextPage)
+    } catch (loadError) {
+      setError(normalizeError(loadError))
+      throw loadError
+    } finally {
+      setBusyLabel(null)
+    }
+  }
+
   async function handleFolderImport(event: ChangeEvent<HTMLInputElement>) {
     if (!runningInTauri) {
       setError('Folder import is only available in the Tauri app.')
@@ -943,7 +1001,6 @@ function App() {
     const sourceLabel =
       files[0]?.webkitRelativePath?.split('/')[0] || 'Selected Dumpspace'
 
-    setBusyLabel('Reading JSON files and rebuilding the SQLite FTS5 index...')
     try {
       const payload: DumpImportPayload = {
         sourceLabel,
@@ -956,18 +1013,20 @@ function App() {
           : null,
       }
 
-      const nextSummary = await invoke<LoadSummary>('load_dump_payload', { payload })
-      setSummary(nextSummary)
-      setSelectedName(nextSummary.landingSymbol)
-      setQuery('')
-      setKindFilter('all')
-      setError(null)
-      setDetail(null)
+      await loadDumpPayload(
+        payload,
+        'Reading JSON files and rebuilding the SQLite FTS5 index...',
+      )
     } catch (loadError) {
       setError(normalizeError(loadError))
-    } finally {
-      setBusyLabel(null)
     }
+  }
+
+  async function handleRemoteGameImport(payload: DumpImportPayload) {
+    await loadDumpPayload(
+      payload,
+      `Loading ${payload.sourceLabel} from GitHub and rebuilding the SQLite FTS5 index...`,
+    )
   }
 
   function jumpToSymbol(name: string) {
@@ -1406,6 +1465,14 @@ function App() {
                 ) : null}
               </div>
             </div>
+          ) : currentPage === 'games' ? (
+            <div className="titlebar-page-context">
+              <strong>Game Browser</strong>
+              <span>
+                Browse remote Dumpspace JSON files from GitHub and load one into the symbol
+                browser.
+              </span>
+            </div>
           ) : (
             <div
               id="node-workspace-titlebar-slot"
@@ -1416,6 +1483,54 @@ function App() {
 
         {runningInTauri ? (
           <div className="window-controls">
+            <button
+              type="button"
+              className="window-control theme-toggle"
+              aria-label={themeMode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              title={themeMode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              onClick={() =>
+                setThemeMode((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'))
+              }
+            >
+              <span className="theme-toggle-icon-shell" aria-hidden="true">
+                {themeMode === 'light' ? (
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="theme-toggle-icon"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="4.2" />
+                    <path d="M12 2.5v2.6" />
+                    <path d="M12 18.9v2.6" />
+                    <path d="M21.5 12h-2.6" />
+                    <path d="M5.1 12H2.5" />
+                    <path d="M18.7 5.3l-1.8 1.8" />
+                    <path d="M7.1 16.9l-1.8 1.8" />
+                    <path d="M18.7 18.7l-1.8-1.8" />
+                    <path d="M7.1 7.1 5.3 5.3" />
+                  </svg>
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="theme-toggle-icon"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 14.2A7.8 7.8 0 1 1 9.8 4 6.3 6.3 0 0 0 20 14.2Z" />
+                  </svg>
+                )}
+              </span>
+              <span className="theme-toggle-label">
+                {themeMode === 'light' ? 'Light' : 'Dark'}
+              </span>
+            </button>
             <button
               type="button"
               className="window-control"
@@ -1497,6 +1612,22 @@ function App() {
                 <span className="app-sidebar-nav-copy">
                   <strong>Node Canvas</strong>
                   <span>Build freeform graphs from nodes, fields and parent branches.</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className={
+                  currentPage === 'games' ? 'app-sidebar-nav-item active' : 'app-sidebar-nav-item'
+                }
+                onClick={() => setCurrentPage('games')}
+              >
+                <span className="app-sidebar-nav-icon" aria-hidden="true">
+                  G
+                </span>
+                <span className="app-sidebar-nav-copy">
+                  <strong>Game Browser</strong>
+                  <span>Pull remote game dumps from GitHub and open them in the browser.</span>
                 </span>
               </button>
             </nav>
@@ -1964,11 +2095,18 @@ function App() {
           )}
             </main>
             </section>
-          ) : (
+          ) : currentPage === 'workspace' ? (
             <NodeWorkspacePage
               runningInTauri={runningInTauri}
               sourceLabel={summary?.sourceLabel ?? null}
               onOpenSymbol={openSymbolFromWorkspace}
+            />
+          ) : (
+            <GameBrowserPage
+              runningInTauri={runningInTauri}
+              busyLabel={busyLabel}
+              currentSourceLabel={summary?.sourceLabel ?? null}
+              onLoadRemoteDump={handleRemoteGameImport}
             />
           )}
 

@@ -26,6 +26,24 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg:
+    radial-gradient(circle at top, rgba(244, 170, 59, 0.15), transparent 30%),
+    linear-gradient(180deg, #f8f4eb 0%, #eef4ff 100%);
+  --panel-bg: rgba(255, 255, 255, 0.88);
+  --panel-muted: rgba(249, 251, 255, 0.94);
+  --border-strong: rgba(24, 48, 84, 0.12);
+  --border-soft: rgba(24, 48, 84, 0.12);
+  --text-strong: #162235;
+  --text-muted: #617284;
+  --panel-shadow: 0 18px 40px rgba(54, 76, 112, 0.14);
+  --scroll-track: rgba(57, 76, 104, 0.08);
+  --scroll-thumb: rgba(97, 115, 141, 0.52);
+  --scroll-thumb-hover: rgba(76, 96, 125, 0.74);
+  --scroll-thumb-border: rgba(242, 245, 250, 0.9);
+}
+
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -44,6 +62,162 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text-strong);
+}
+
+:root[data-theme='light'] .app-layout::before {
+  background: rgba(24, 48, 84, 0.12);
+}
+
+:root[data-theme='light'] .titlebar,
+:root[data-theme='light'] .relation-popover-header,
+:root[data-theme='light'] .framework-popover-header {
+  background: rgba(247, 249, 253, 0.94) !important;
+}
+
+:root[data-theme='light'] .app-sidebar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 252, 0.94)),
+    rgba(255, 255, 255, 0.96) !important;
+  box-shadow:
+    0 18px 40px rgba(54, 76, 112, 0.12),
+    0 0 0 1px rgba(24, 48, 84, 0.04) !important;
+}
+
+:root[data-theme='light'] .titlebar-search input,
+:root[data-theme='light'] .workspace-titlebar-search input,
+:root[data-theme='light'] .workspace-sidebar-rename-input,
+:root[data-theme='light'] .search-box input {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border-color: rgba(24, 48, 84, 0.12) !important;
+  color: var(--text-strong) !important;
+}
+
+:root[data-theme='light'] .titlebar-search input::placeholder,
+:root[data-theme='light'] .workspace-titlebar-search input::placeholder {
+  color: rgba(22, 34, 53, 0.4) !important;
+}
+
+:root[data-theme='light'] .search-history-popover,
+:root[data-theme='light'] .filter-combo-menu,
+:root[data-theme='light'] .action-menu,
+:root[data-theme='light'] .offsets-popover,
+:root[data-theme='light'] .workspace-titlebar-search-popover,
+:root[data-theme='light'] .workspace-sidebar-file-menu,
+:root[data-theme='light'] .workspace-node-inspector-popover,
+:root[data-theme='light'] .relation-popover,
+:root[data-theme='light'] .framework-popover {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(24, 48, 84, 0.12) !important;
+  box-shadow: 0 18px 40px rgba(54, 76, 112, 0.14) !important;
+}
+
+:root[data-theme='light'] .framework-overlay,
+:root[data-theme='light'] .relation-overlay {
+  background: rgba(236, 241, 248, 0.62) !important;
+}
+
+:root[data-theme='light'] .result-card,
+:root[data-theme='light'] .relation-card,
+:root[data-theme='light'] .table-block,
+:root[data-theme='light'] .method-card,
+:root[data-theme='light'] .offset-card,
+:root[data-theme='light'] .node-workspace-panel,
+:root[data-theme='light'] .node-workspace-canvas-shell,
+:root[data-theme='light'] .node-workspace-document-card,
+:root[data-theme='light'] .workspace-titlebar-search-result,
+:root[data-theme='light'] .workspace-node-inspector-section,
+:root[data-theme='light'] .workspace-field-group-card,
+:root[data-theme='light'] .framework-flow-node,
+:root[data-theme='light'] .game-link-button,
+:root[data-theme='light'] .game-inline-link {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(24, 48, 84, 0.12) !important;
+}
+
+:root[data-theme='light'] .node-workspace-canvas-shell {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 253, 0.94)),
+    rgba(255, 255, 255, 0.9) !important;
+  box-shadow:
+    0 18px 40px rgba(54, 76, 112, 0.14),
+    0 0 0 1px rgba(24, 48, 84, 0.04) !important;
+}
+
+:root[data-theme='light'] .framework-flow-shell,
+:root[data-theme='light'] .framework-flow-canvas,
+:root[data-theme='light'] .node-workspace-flow-shell,
+:root[data-theme='light'] .node-workspace-flow,
+:root[data-theme='light'] .node-workspace-empty-canvas {
+  background:
+    radial-gradient(circle at top left, rgba(91, 166, 255, 0.08), transparent 32%),
+    rgba(245, 248, 253, 0.92) !important;
+}
+
+:root[data-theme='light'] .framework-flow-canvas .react-flow__edge-textbg {
+  fill: rgba(255, 255, 255, 0.96) !important;
+}
+
+:root[data-theme='light'] .framework-flow-canvas .react-flow__edge-text {
+  fill: rgba(22, 34, 53, 0.72) !important;
+}
+
+:root[data-theme='light'] .framework-flow-minimap,
+:root[data-theme='light'] .framework-flow-controls button,
+:root[data-theme='light'] .node-workspace-minimap,
+:root[data-theme='light'] .node-workspace-controls button {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-color: rgba(24, 48, 84, 0.12) !important;
+}
+
+:root[data-theme='light'] .workspace-flow-node {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 253, 0.94)),
+    rgba(255, 255, 255, 0.94) !important;
+  border-color: rgba(91, 166, 255, 0.24) !important;
+  box-shadow:
+    0 12px 30px rgba(54, 76, 112, 0.16),
+    0 0 0 1px rgba(24, 48, 84, 0.04) !important;
+}
+
+:root[data-theme='light'] .workspace-flow-node.selected {
+  box-shadow:
+    0 18px 36px rgba(54, 76, 112, 0.18),
+    0 0 0 1px rgba(244, 170, 59, 0.24) !important;
+}
+
+:root[data-theme='light'] .kind-chip,
+:root[data-theme='light'] .game-engine-chip,
+:root[data-theme='light'] .framework-flow-node-kind,
+:root[data-theme='light'] .workspace-flow-node-kind {
+  color: #244567 !important;
+  background: rgba(91, 166, 255, 0.16) !important;
+  border-color: rgba(91, 166, 255, 0.18) !important;
+}
+
+:root[data-theme='light'] .framework-flow-node-badge,
+:root[data-theme='light'] .game-source-badge {
+  color: #82511b !important;
+  background: rgba(244, 170, 59, 0.2) !important;
+  border-color: rgba(244, 170, 59, 0.24) !important;
+}
+
+:root[data-theme='light'] .workspace-node-inspector-topbar,
+:root[data-theme='light'] .framework-popover-header,
+:root[data-theme='light'] .relation-popover-header {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent),
+    rgba(247, 249, 253, 0.94) !important;
+}
+
+:root[data-theme='light'] .workspace-node-inspector-close,
+:root[data-theme='light'] .workspace-node-inspector-trigger,
+:root[data-theme='light'] .workspace-sidebar-file-menu-item:hover,
+:root[data-theme='light'] .workspace-sidebar-file-menu-item:focus-visible {
+  background: rgba(24, 48, 84, 0.08) !important;
+}
+
+:root[data-theme='light'] .window-control-icon.restore::before {
+  background: rgba(247, 249, 253, 0.94) !important;
 }
 
 *::-webkit-scrollbar {
