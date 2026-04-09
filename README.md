@@ -39,6 +39,14 @@ This project does not generate dumps by itself. Generate a `Dumpspace` folder wi
 
 ![UE Framework Graph](./image/ueframeworkgraph.jpg)
 
+### Node Canvas
+
+![Node Canvas](./image/nodecanvas.jpg)
+
+### Game Browser
+
+![Game Browser](./image/gamebrowser.jpg)
+
 ## Tech Stack
 
 - Tauri 2

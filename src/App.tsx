@@ -14,6 +14,8 @@ import './App.css'
 import FrameworkGraphModal from './FrameworkGraphModal'
 import GameBrowserPage from './GameBrowserPage'
 import NodeWorkspacePage from './NodeWorkspacePage'
+import { getPreviewInitialQuery } from './previewData'
+import { getPreviewScenario } from './previewMode'
 
 type SymbolKind = 'class' | 'struct' | 'enum'
 type KindFilter = 'all' | SymbolKind
@@ -639,11 +641,13 @@ function readPreferredTheme(): ThemeMode {
 
 function App() {
   const runningInTauri = isTauri()
+  const previewScenario = getPreviewScenario()
   const directoryInputRef = useRef<HTMLInputElement | null>(null)
   const titlebarSearchRef = useRef<HTMLDivElement | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const offsetsMenuRef = useRef<HTMLDivElement | null>(null)
   const filterMenuRef = useRef<HTMLDivElement | null>(null)
+  const previewQueryAppliedRef = useRef(false)
   const [summary, setSummary] = useState<LoadSummary | null>(null)
   const [results, setResults] = useState<SearchResult[]>([])
   const [detail, setDetail] = useState<SymbolDetail | null>(null)
@@ -821,6 +825,65 @@ function App() {
     setCopyLabel('Copy C++')
     setRelationViewOpen(false)
   }, [selectedName])
+
+  useEffect(() => {
+    if (!previewScenario || !summary || previewQueryAppliedRef.current) {
+      return
+    }
+
+    const previewQuery = getPreviewInitialQuery(previewScenario)
+    if (previewQuery) {
+      setQuery(previewQuery)
+    }
+
+    previewQueryAppliedRef.current = true
+  }, [previewScenario, summary])
+
+  useEffect(() => {
+    if (!previewScenario || !summary) {
+      return
+    }
+
+    const nextPage =
+      previewScenario === 'workspace'
+        ? 'workspace'
+        : previewScenario === 'games'
+          ? 'games'
+          : 'browser'
+
+    if (currentPage !== nextPage) {
+      setCurrentPage(nextPage)
+    }
+  }, [currentPage, previewScenario, summary])
+
+  useEffect(() => {
+    if (
+      previewScenario !== 'relation' ||
+      relationViewOpen ||
+      frameworkGraphOpen ||
+      !detail ||
+      detail.name !== 'ALight'
+    ) {
+      return
+    }
+
+    setRelationViewOpen(true)
+  }, [detail, frameworkGraphOpen, previewScenario, relationViewOpen])
+
+  useEffect(() => {
+    if (
+      previewScenario !== 'framework' ||
+      frameworkGraphOpen ||
+      relationViewOpen ||
+      !summary ||
+      !detail ||
+      detail.name !== 'APlayerController'
+    ) {
+      return
+    }
+
+    setFrameworkGraphOpen(true)
+  }, [detail, frameworkGraphOpen, previewScenario, relationViewOpen, summary])
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -1666,6 +1729,48 @@ function App() {
               <strong className="status-value">{busyLabel ?? 'Idle'}</strong>
             </div>
           </section>
+
+          {previewScenario ? (
+            <div
+              hidden
+              data-preview-scenario={previewScenario}
+              data-preview-ready={
+                previewScenario === 'main'
+                  ? String(
+                      !!summary &&
+                        !!detail &&
+                        detail.name === 'AAudioVolume' &&
+                        !loadingResults &&
+                        !loadingDetail &&
+                        busyLabel == null,
+                    )
+                  : previewScenario === 'relation'
+                    ? String(
+                        !!summary &&
+                          !!detail &&
+                          detail.name === 'ALight' &&
+                          relationViewOpen &&
+                          !loadingResults &&
+                          !loadingDetail &&
+                          busyLabel == null,
+                      )
+                    : previewScenario === 'framework'
+                      ? String(
+                          !!summary &&
+                            !!detail &&
+                            detail.name === 'APlayerController' &&
+                            frameworkGraphOpen &&
+                            !loadingResults &&
+                            !loadingDetail &&
+                            busyLabel == null,
+                        )
+                      : previewScenario === 'workspace'
+                        ? String(!!summary && currentPage === 'workspace' && busyLabel == null)
+                        : String(!!summary && currentPage === 'games' && busyLabel == null)
+              }
+              aria-hidden="true"
+            />
+          ) : null}
 
           {error ? (
             <section className="error-banner">
