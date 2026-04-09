@@ -194,6 +194,16 @@ body {
   border-color: rgba(91, 166, 255, 0.18) !important;
 }
 
+:root[data-theme='light'] .link-chip {
+  color: #244567 !important;
+  background: rgba(91, 166, 255, 0.12) !important;
+  border-color: rgba(91, 166, 255, 0.22) !important;
+}
+
+:root[data-theme='light'] .link-chip.subtle {
+  background: rgba(91, 166, 255, 0.08) !important;
+}
+
 :root[data-theme='light'] .framework-flow-node-badge,
 :root[data-theme='light'] .game-source-badge {
   color: #82511b !important;
